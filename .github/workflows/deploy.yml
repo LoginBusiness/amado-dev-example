@@ -37,9 +37,20 @@ jobs:
           printf '%s' "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/deploy_key
           chmod 600 /tmp/deploy_key
           ls -la /tmp/deploy_key
-          # Test SSH connection and create target directory
+          
+          # Setup known hosts to prevent host key verification issues
+          ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          
+          # Test SSH connection with forced public key auth
           echo "Testing SSH connection and creating target directory"
-          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p ${{ secrets.REMOTE_PATH }}"
+          ssh -i /tmp/deploy_key \
+              -o PreferredAuthentications=publickey \
+              -o PubkeyAuthentication=yes \
+              -o PasswordAuthentication=no \
+              -p ${{ secrets.SSH_PORT }} \
+              ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p ${{ secrets.REMOTE_PATH }}"
+          
           echo "SSH_KEY_PATH=/tmp/deploy_key" >> $GITHUB_ENV
 
       - name: Upload tarball to remote host
@@ -52,13 +63,14 @@ jobs:
           source: ${{ env.TARFILE }}
           target: ${{ secrets.REMOTE_PATH }}
           debug: true
+          use_insecure_cipher: false
 
       - name: Run docker compose on remote
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key_path: ${{ env.SSH_KEY_PATH }}
           port: ${{ secrets.SSH_PORT }}
           script: |
             set -e
