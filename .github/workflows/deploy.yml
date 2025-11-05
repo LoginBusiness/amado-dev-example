@@ -42,9 +42,19 @@ jobs:
           ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
           
+          # Disable ssh-agent for predictable client behavior
+          unset SSH_AUTH_SOCK || true
+
+          # Diagnostic: print supported client algorithms (helps compare client vs server)
+          echo "-- ssh -Q key (supported public key algorithms) --"
+          ssh -Q key || true
+          echo "-- ssh -Q hostkeyalg (supported host key algorithms) --"
+          ssh -Q hostkeyalg || true
+
           # Test SSH connection with forced public key auth and specific key type
           echo "Testing SSH connection and creating target directory"
           ssh -i /tmp/deploy_key \
+              -o IdentitiesOnly=yes \
               -o PreferredAuthentications=publickey \
               -o PubkeyAuthentication=yes \
               -o PasswordAuthentication=no \
@@ -53,13 +63,16 @@ jobs:
               -vvv \
               -p ${{ secrets.SSH_PORT }} \
               ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p ${{ secrets.REMOTE_PATH }}"
-          
+
           echo "SSH_KEY_PATH=/tmp/deploy_key" >> $GITHUB_ENV
 
       - name: Upload tarball to remote host (using scp)
         run: |
           set -euo pipefail
           echo "Uploading $TARFILE to remote host using scp (runner scp binary)"
+          # Disable ssh-agent to avoid exposing unexpected keys
+          unset SSH_AUTH_SOCK || true
+
           # Ensure remote path exists (created earlier during SSH test, but be safe)
           ssh -i /tmp/deploy_key \
             -o IdentitiesOnly=yes \
@@ -71,6 +84,10 @@ jobs:
             -vvv \
             -p ${{ secrets.SSH_PORT }} \
             ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p '${{ secrets.REMOTE_PATH }}'"
+
+          # Diagnostic: show which ssh keys client would offer from agent (should be none)
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK"
+          ssh-add -l || true
 
           # Copy the tarball (use scp with explicit options)
           scp -i /tmp/deploy_key \
@@ -87,6 +104,8 @@ jobs:
         run: |
           set -euo pipefail
           echo "Connecting to remote and running docker compose"
+          # Disable ssh-agent for the session
+          unset SSH_AUTH_SOCK || true
           ssh -i /tmp/deploy_key \
             -o IdentitiesOnly=yes \
             -o PreferredAuthentications=publickey \
