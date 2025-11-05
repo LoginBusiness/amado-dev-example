@@ -1,0 +1,45 @@
+name: Deploy to Docker host via SSH
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy files to remote host
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: |
+            docker-compose.yml
+            app
+          target: ${{ secrets.REMOTE_PATH }}
+
+      - name: Run docker compose on remote
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -e
+            cd "${{ secrets.REMOTE_PATH }}"
+            # Ensure docker is available
+            docker --version
+            # Use docker compose (v2) if available, fallback to docker-compose
+            if command -v docker-compose >/dev/null 2>&1; then
+              docker-compose pull || true
+              docker-compose up -d --build
+            else
+              docker compose pull || true
+              docker compose up -d --build
+            fi

@@ -1,0 +1,27 @@
+version: '3.8'
+services:
+  app:
+    build: ./app
+    ports:
+      - "8080:80"
+    environment:
+      DB_HOST: db
+      DB_NAME: guestbook
+      DB_USER: guest
+      DB_PASS: guestpass
+    depends_on:
+      - db
+
+  db:
+    image: mariadb:10.6
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: guestbook
+      MYSQL_USER: guest
+      MYSQL_PASSWORD: guestpass
+    volumes:
+      - db_data:/var/lib/mysql
+
+volumes:
+  db_data:
