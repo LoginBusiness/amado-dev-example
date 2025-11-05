@@ -57,7 +57,7 @@ jobs:
           echo "SSH_KEY_PATH=/tmp/deploy_key" >> $GITHUB_ENV
 
       - name: Upload tarball to remote host
-        uses: appleboy/scp-action@v0.16.0
+        uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
@@ -70,7 +70,7 @@ jobs:
           ssh_algorithms: ssh-ed25519
 
       - name: Run docker compose on remote
-        uses: appleboy/ssh-action@v0.16.0
+        uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
