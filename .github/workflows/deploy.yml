@@ -42,12 +42,14 @@ jobs:
           ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
           
-          # Test SSH connection with forced public key auth
+          # Test SSH connection with forced public key auth and specific key types
           echo "Testing SSH connection and creating target directory"
           ssh -i /tmp/deploy_key \
               -o PreferredAuthentications=publickey \
               -o PubkeyAuthentication=yes \
               -o PasswordAuthentication=no \
+              -o HostKeyAlgorithms=ssh-rsa,rsa-sha2-512,rsa-sha2-256,ecdsa-sha2-nistp256,ssh-ed25519 \
+              -o PubkeyAcceptedKeyTypes=ssh-rsa,rsa-sha2-512,rsa-sha2-256,ecdsa-sha2-nistp256,ssh-ed25519 \
               -p ${{ secrets.SSH_PORT }} \
               ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p ${{ secrets.REMOTE_PATH }}"
           
@@ -64,6 +66,7 @@ jobs:
           target: ${{ secrets.REMOTE_PATH }}
           debug: true
           use_insecure_cipher: false
+          ssh_algorithms: ssh-rsa,rsa-sha2-512,rsa-sha2-256,ecdsa-sha2-nistp256,ssh-ed25519
 
       - name: Run docker compose on remote
         uses: appleboy/ssh-action@master
