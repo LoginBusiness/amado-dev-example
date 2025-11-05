@@ -11,6 +11,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Debug repo contents (for scp)
+        run: |
+          echo "PWD: $(pwd)"
+          echo "Listing root:"; ls -la
+          echo "Listing app/:"; ls -la app || true
+
       - name: Copy files to remote host
         uses: appleboy/scp-action@master
         with:
@@ -18,9 +24,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          source: |
-            docker-compose.yml
-            app
+          # Use a single-line, space-separated list so the underlying tar receives valid paths
+          source: "docker-compose.yml app"
           target: ${{ secrets.REMOTE_PATH }}
 
       - name: Run docker compose on remote
