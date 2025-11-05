@@ -17,15 +17,24 @@ jobs:
           echo "Listing root:"; ls -la
           echo "Listing app/:"; ls -la app || true
 
-      - name: Copy files to remote host
+      - name: Create tarball of artifacts for upload
+        run: |
+          set -e
+          TARFILE="release-$(date +%s).tar.gz"
+          echo "Creating $TARFILE"
+          # Create tar with explicit paths so we control behavior
+          tar -czf "$TARFILE" docker-compose.yml app
+          ls -la "$TARFILE"
+          echo "TARFILE=$TARFILE" >> $GITHUB_ENV
+
+      - name: Upload tarball to remote host
         uses: appleboy/scp-action@master
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          # Use a single-line, space-separated list so the underlying tar receives valid paths
-          source: "docker-compose.yml app"
+          source: ${{ env.TARFILE }}
           target: ${{ secrets.REMOTE_PATH }}
 
       - name: Run docker compose on remote
@@ -40,6 +49,15 @@ jobs:
             cd "${{ secrets.REMOTE_PATH }}"
             # Ensure docker is available
             docker --version
+            # Extract uploaded tarball (find the most recent release-*.tar.gz)
+            TARFILE=$(ls -1t release-*.tar.gz 2>/dev/null | head -n1 || true)
+            if [ -n "$TARFILE" ]; then
+              echo "Extracting $TARFILE"
+              tar -xzf "$TARFILE"
+              rm -f "$TARFILE"
+            else
+              echo "No tarfile found to extract"
+            fi
             # Use docker compose (v2) if available, fallback to docker-compose
             if command -v docker-compose >/dev/null 2>&1; then
               docker-compose pull || true
