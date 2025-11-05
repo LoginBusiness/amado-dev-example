@@ -27,7 +27,7 @@ jobs:
           ls -la "$TARFILE"
           echo "TARFILE=$TARFILE" >> $GITHUB_ENV
 
-      - name: Write SSH private key to disk
+      - name: Write and verify SSH key setup
         run: |
           if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
             echo "ERROR: SSH_PRIVATE_KEY secret is empty" && exit 1
@@ -36,6 +36,10 @@ jobs:
           echo "Writing SSH key to /tmp/deploy_key"
           printf '%s' "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/deploy_key
           chmod 600 /tmp/deploy_key
+          ls -la /tmp/deploy_key
+          # Test SSH connection and create target directory
+          echo "Testing SSH connection and creating target directory"
+          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p ${{ secrets.REMOTE_PATH }}"
           echo "SSH_KEY_PATH=/tmp/deploy_key" >> $GITHUB_ENV
 
       - name: Upload tarball to remote host
@@ -47,6 +51,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           source: ${{ env.TARFILE }}
           target: ${{ secrets.REMOTE_PATH }}
+          debug: true
 
       - name: Run docker compose on remote
         uses: appleboy/ssh-action@master
