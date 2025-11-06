@@ -3,146 +3,51 @@ name: Deploy to Docker host via SSH
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   deploy:
+    name: Deploy stack via SSH
     runs-on: ubuntu-latest
+    environment: production
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Debug repo contents (for scp)
-        run: |
-          echo "PWD: $(pwd)"
-          echo "Listing root:"; ls -la
-          echo "Listing app/:"; ls -la app || true
-
-      - name: Create tarball of artifacts for upload
-        run: |
-          set -e
-          TARFILE="release-$(date +%s).tar.gz"
-          echo "Creating $TARFILE"
-          # Create tar with explicit paths so we control behavior
-          tar -czf "$TARFILE" docker-compose.yml app
-          ls -la "$TARFILE"
-          echo "TARFILE=$TARFILE" >> $GITHUB_ENV
-
-      - name: Write and verify SSH key setup
+      - name: Write SSH private key
+        id: write_key
         run: |
           if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
-            echo "ERROR: SSH_PRIVATE_KEY secret is empty" && exit 1
-          fi
-          mkdir -p ~/.ssh
-          echo "Writing SSH key to /tmp/deploy_key"
-          printf '%s' "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/deploy_key
-          chmod 600 /tmp/deploy_key
-          ls -la /tmp/deploy_key
-          # Validate key: attempt to derive public key and print fingerprint
-          echo "Validating private key format (will not print the private key)"
-          if ssh-keygen -y -f /tmp/deploy_key >/tmp/deploy_key.pub 2>/tmp/sshkey_err; then
-            ssh-keygen -lf /tmp/deploy_key.pub || true
-            rm -f /tmp/sshkey_err
-          else
-            echo "ERROR: could not parse the private key with ssh-keygen"
-            echo "ssh-keygen error output:" && sed -n '1,200p' /tmp/sshkey_err || true
-            echo "Make sure the GitHub secret contains the private key (BEGIN OPENSSH PRIVATE KEY...) without extra quotes or base64 encoding, and that it is not passphrase-protected."
+            echo "SSH_PRIVATE_KEY secret is empty" >&2
             exit 1
           fi
-          
-          # Setup known hosts to prevent host key verification issues
-          ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-          
-          # Disable ssh-agent for predictable client behavior
-          unset SSH_AUTH_SOCK || true
+          echo "Writing private key to /tmp/deploy_key"
+          printf '%s' "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
 
-          # Diagnostic: print supported client algorithms (helps compare client vs server)
-          echo "-- ssh -Q key (supported public key algorithms) --"
-          ssh -Q key || true
-          echo "-- ssh -Q hostkeyalg (supported host key algorithms) --"
-          ssh -Q hostkeyalg || true
-
-          # Test SSH connection with forced public key auth and specific key type
-          echo "Testing SSH connection and creating target directory"
-          ssh -i /tmp/deploy_key \
-              -o IdentitiesOnly=yes \
-              -o PreferredAuthentications=publickey \
-              -o PubkeyAuthentication=yes \
-              -o PasswordAuthentication=no \
-              -o HostKeyAlgorithms=ssh-ed25519 \
-              -o PubkeyAcceptedKeyTypes=ssh-ed25519 \
-              -vvv \
-              -p ${{ secrets.SSH_PORT }} \
-              ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p ${{ secrets.REMOTE_PATH }}"
-
-          echo "SSH_KEY_PATH=/tmp/deploy_key" >> $GITHUB_ENV
-
-      - name: Upload tarball to remote host (using scp)
+      - name: Ensure remote path exists
         run: |
-          set -euo pipefail
-          echo "Uploading $TARFILE to remote host using scp (runner scp binary)"
-          # Disable ssh-agent to avoid exposing unexpected keys
-          unset SSH_AUTH_SOCK || true
+          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" "mkdir -p '${{ secrets.REMOTE_PATH }}'"
 
-          # Ensure remote path exists (created earlier during SSH test, but be safe)
-          ssh -i /tmp/deploy_key \
-            -o IdentitiesOnly=yes \
-            -o PreferredAuthentications=publickey \
-            -o PubkeyAuthentication=yes \
-            -o PasswordAuthentication=no \
-            -o HostKeyAlgorithms=ssh-ed25519 \
-            -o PubkeyAcceptedKeyTypes=ssh-ed25519 \
-            -vvv \
-            -p ${{ secrets.SSH_PORT }} \
-            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "mkdir -p '${{ secrets.REMOTE_PATH }}'"
-
-          # Diagnostic: show which ssh keys client would offer from agent (should be none)
-          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK"
-          ssh-add -l || true
-
-          # Copy the tarball (use scp with explicit options)
-          scp -i /tmp/deploy_key \
-            -o IdentitiesOnly=yes \
-            -o PreferredAuthentications=publickey \
-            -o PubkeyAuthentication=yes \
-            -o PasswordAuthentication=no \
-            -o HostKeyAlgorithms=ssh-ed25519 \
-            -o PubkeyAcceptedKeyTypes=ssh-ed25519 \
-            -vvv \
-            -P ${{ secrets.SSH_PORT }} "${{ env.TARFILE }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.REMOTE_PATH }}/"
-
-      - name: Run docker compose on remote (using ssh)
+      - name: Copy files to remote
         run: |
-          set -euo pipefail
-          echo "Connecting to remote and running docker compose"
-          # Disable ssh-agent for the session
-          unset SSH_AUTH_SOCK || true
-          ssh -i /tmp/deploy_key \
-            -o IdentitiesOnly=yes \
-            -o PreferredAuthentications=publickey \
-            -o PubkeyAuthentication=yes \
-            -o PasswordAuthentication=no \
-            -o HostKeyAlgorithms=ssh-ed25519 \
-            -o PubkeyAcceptedKeyTypes=ssh-ed25519 \
-            -vvv \
-            -p ${{ secrets.SSH_PORT }} \
-            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
-            set -e
-            cd "${{ secrets.REMOTE_PATH }}"
-            docker --version
-            TARFILE=$(ls -1t release-*.tar.gz 2>/dev/null | head -n1 || true)
-            if [ -n "$TARFILE" ]; then
-              echo "Extracting $TARFILE"
-              tar -xzf "$TARFILE"
-              rm -f "$TARFILE"
-            else
-              echo "No tarfile found to extract"
-            fi
-            if command -v docker-compose >/dev/null 2>&1; then
-              docker-compose pull || true
-              docker-compose up -d --build
-            else
-              docker compose pull || true
-              docker compose up -d --build
-            fi
-          EOF
+          echo "Copying docker-compose.yml and app/ to remote"
+          scp -i /tmp/deploy_key -o StrictHostKeyChecking=no -P "${{ secrets.SSH_PORT }}" -r docker-compose.yml app "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.REMOTE_PATH }}"
+
+      - name: Deploy on remote (docker compose)
+        run: |
+          echo "Running docker compose on remote"
+          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+            "set -e; cd '${{ secrets.REMOTE_PATH }}'; \
+             if command -v docker >/dev/null 2>&1; then true; else echo 'docker not found' >&2; exit 2; fi; \
+             if docker compose version >/dev/null 2>&1; then \
+               docker compose pull || true; docker compose up -d --build; \
+             elif command -v docker-compose >/dev/null 2>&1; then \
+               docker-compose pull || true; docker-compose up -d --build; \
+             else echo 'no docker-compose command found' >&2; exit 3; fi"
+
+      - name: Cleanup private key
+        if: always()
+        run: |
+          rm -f /tmp/deploy_key
+
