@@ -38,7 +38,7 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             # Navigate to the application directory on the server
-            cd ${{ secrets.REMODE_PATH }}
+            cd ${{ secrets.REMOTE_PATH }}
             
             echo "Current directory: $(pwd)"
             echo "Listing files..."
