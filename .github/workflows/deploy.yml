@@ -14,7 +14,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Write SSH private key
+      - name: Write SSH private key and validate
         id: write_key
         run: |
           if [ -z "${{ secrets.SSH_PRIVATE_KEY }}" ]; then
@@ -22,22 +22,39 @@ jobs:
             exit 1
           fi
           echo "Writing private key to /tmp/deploy_key"
+          # Write the key exactly as provided. If you stored a base64 value in the secret,
+          # change this to: echo "${{ secrets.SSH_PRIVATE_KEY }}" | base64 -d > /tmp/deploy_key
           printf '%s' "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/deploy_key
           chmod 600 /tmp/deploy_key
+          # Prevent using any ssh-agent keys from the runner which can cause "Too many authentication failures"
+          unset SSH_AUTH_SOCK || true
+          # Validate the private key can be parsed and derive its public key
+          echo "Verifying private key format with ssh-keygen"
+          if ssh-keygen -y -f /tmp/deploy_key > /tmp/deploy_key.pub 2>/tmp/sshkey_err; then
+            echo "Private key parsed successfully"
+            ssh-keygen -lf /tmp/deploy_key.pub || true
+            rm -f /tmp/sshkey_err
+          else
+            echo "ERROR: ssh-keygen failed to parse the private key. See ssh-keygen output below:" >&2
+            sed -n '1,200p' /tmp/sshkey_err || true
+            echo "Common causes: key is base64-encoded in the secret (decode it in the workflow),or the key is passphrase-protected, or the secret contains extra quotes/whitespace." >&2
+            exit 1
+          fi
 
       - name: Ensure remote path exists
         run: |
-          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" "mkdir -p '${{ secrets.REMOTE_PATH }}'"
+          # Force the ssh client to only use the key we just wrote to avoid agent or other keys
+          ssh -i /tmp/deploy_key -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PubkeyAuthentication=yes -o StrictHostKeyChecking=no -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" "mkdir -p '${{ secrets.REMOTE_PATH }}'"
 
       - name: Copy files to remote
         run: |
           echo "Copying docker-compose.yml and app/ to remote"
-          scp -i /tmp/deploy_key -o StrictHostKeyChecking=no -P "${{ secrets.SSH_PORT }}" -r docker-compose.yml app "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.REMOTE_PATH }}"
+          scp -i /tmp/deploy_key -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PubkeyAuthentication=yes -o StrictHostKeyChecking=no -P "${{ secrets.SSH_PORT }}" -r docker-compose.yml app "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.REMOTE_PATH }}"
 
       - name: Deploy on remote (docker compose)
         run: |
           echo "Running docker compose on remote"
-          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
+          ssh -i /tmp/deploy_key -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PubkeyAuthentication=yes -o StrictHostKeyChecking=no -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" \
             "set -e; cd '${{ secrets.REMOTE_PATH }}'; \
              if command -v docker >/dev/null 2>&1; then true; else echo 'docker not found' >&2; exit 2; fi; \
              if docker compose version >/dev/null 2>&1; then \
