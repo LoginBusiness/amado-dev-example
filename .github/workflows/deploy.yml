@@ -46,11 +46,11 @@ jobs:
             ls -la
             
             echo "Pulling latest images (if any)..."
-            docker-compose pull
+            docker compose pull
             
             echo "Building and starting containers in detached mode..."
             # --build flag rebuilds services if their source code has changed
-            docker-compose up -d --build
+            docker compose up -d --build
             
             echo "Cleaning up old Docker objects..."
             # -f flag forces pruning without confirmation
