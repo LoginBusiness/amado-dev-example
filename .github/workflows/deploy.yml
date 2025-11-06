@@ -37,6 +37,17 @@ jobs:
           printf '%s' "${{ secrets.SSH_PRIVATE_KEY }}" > /tmp/deploy_key
           chmod 600 /tmp/deploy_key
           ls -la /tmp/deploy_key
+          # Validate key: attempt to derive public key and print fingerprint
+          echo "Validating private key format (will not print the private key)"
+          if ssh-keygen -y -f /tmp/deploy_key >/tmp/deploy_key.pub 2>/tmp/sshkey_err; then
+            ssh-keygen -lf /tmp/deploy_key.pub || true
+            rm -f /tmp/sshkey_err
+          else
+            echo "ERROR: could not parse the private key with ssh-keygen"
+            echo "ssh-keygen error output:" && sed -n '1,200p' /tmp/sshkey_err || true
+            echo "Make sure the GitHub secret contains the private key (BEGIN OPENSSH PRIVATE KEY...) without extra quotes or base64 encoding, and that it is not passphrase-protected."
+            exit 1
+          fi
           
           # Setup known hosts to prevent host key verification issues
           ssh-keyscan -p ${{ secrets.SSH_PORT }} -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
