@@ -12,11 +12,23 @@ jobs:
   deploy:
     name: Deploy Application
     runs-on: ubuntu-latest # Use the latest Ubuntu runner
+    environment:
+      name: production
+      url: ${{ secrets.APP_URL }} # The URL where your app will be accessible
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         # This step checks out your repository's code so the action can access it.
+
+      - name: Start Deployment
+        uses: bobheadxi/deployments@v1
+        id: deployment
+        with:
+          step: start
+          token: ${{ secrets.GITHUB_TOKEN }}
+          env: production
+          ref: ${{ github.sha }}
 
       - name: Copy files to remote server
         uses: appleboy/scp-action@v1
@@ -57,3 +69,13 @@ jobs:
             docker system prune -f
             
             echo "Deployment complete."
+            
+      - name: Update Deployment Status
+        if: always()
+        uses: bobheadxi/deployments@v1
+        with:
+          step: finish
+          token: ${{ secrets.GITHUB_TOKEN }}
+          status: ${{ job.status }}
+          deployment_id: ${{ steps.deployment.outputs.deployment_id }}
+          env_url: ${{ secrets.APP_URL }}
