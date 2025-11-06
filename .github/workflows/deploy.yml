@@ -19,7 +19,7 @@ jobs:
         # This step checks out your repository's code so the action can access it.
 
       - name: Copy files to remote server
-        uses: appleboy/scp-action@v0.1.4
+        uses: appleboy/scp-action@v1
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
@@ -28,6 +28,7 @@ jobs:
           source: "docker-compose.yml,app/" # Files and directories to copy
           target: ${{ secrets.REMOTE_PATH }} # Destination path on the server
           overwrite: true # Overwrite existing files on the server
+          debug: true # Enable debug output for troubleshooting
 
       - name: Run deployment commands on remote
         uses: appleboy/ssh-action@v1.0.3
