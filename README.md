@@ -122,6 +122,49 @@ The `-d` flag runs containers in the background, and `--build` ensures your appl
 2. Use GitHub's encrypted secrets for sensitive data
 3. Keep your SSH keys secure and never share them
 4. Regularly update your Docker images and dependencies
+5. **Important**: The current `docker-compose.yml` includes database passwords directly in the file. This is OK for local development but **NOT** recommended for production. Instead:
+
+   **Option 1: GitHub Actions Secrets and Variables**
+   - Store sensitive values as GitHub Secrets or Variables (Settings → Secrets and variables → Actions)
+   - Modify your deployment workflow to create a `.env` file on the server:
+     ```yaml
+     # In .github/workflows/deploy.yml
+     - name: Create environment file
+       run: |
+         echo "MYSQL_ROOT_PASSWORD=${{ secrets.DB_ROOT_PASSWORD }}" >> .env
+         echo "MYSQL_PASSWORD=${{ secrets.DB_USER_PASSWORD }}" >> .env
+     ```
+   - Update docker-compose.yml to use environment files:
+     ```yaml
+     services:
+       db:
+         env_file: .env
+     ```
+
+   **Option 2: Docker Secrets** (for Docker Swarm deployments)
+   - Use Docker secrets for production deployments:
+     ```bash
+     # Create secrets
+     echo "mySecurePassword" | docker secret create db_root_password -
+     echo "myUserPassword" | docker secret create db_user_password -
+     ```
+   - Update your production docker-compose.yml to use secrets:
+     ```yaml
+     services:
+       db:
+         environment:
+           MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+           MYSQL_PASSWORD_FILE: /run/secrets/db_user_password
+         secrets:
+           - db_root_password
+           - db_user_password
+
+     secrets:
+       db_root_password:
+         external: true
+       db_user_password:
+         external: true
+     ```
 
 ## Troubleshooting
 
