@@ -47,7 +47,7 @@ $rows = $pdo->query('SELECT id, name, message, created_at FROM entries ORDER BY 
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Guestbook</title>
+    <title>Amado Guestbook</title>
     <style>
       body { font-family: Arial, sans-serif; max-width: 800px; margin: 2rem auto; }
       form { margin-bottom: 1.5rem; }
