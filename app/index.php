@@ -57,7 +57,7 @@ $rows = $pdo->query('SELECT id, name, message, created_at FROM entries ORDER BY 
     </style>
   </head>
   <body>
-    <h1>Guestbook</h1>
+    <h1>Amado Guestbook</h1>
 
     <form method="post">
       <label>Name<br>
